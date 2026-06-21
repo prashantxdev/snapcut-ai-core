@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { v4 as uuidNotAvailable } from "@/lib/uuid"; // shim
+import { v4 as uuidV4 } from "@/lib/uuid";
 import { supabase } from "@/integrations/supabase/client";
 import { processUpload } from "@/lib/processing.functions";
 import { AppShell } from "@/components/AppShell";
@@ -40,7 +40,7 @@ function WorkspacePage() {
       if (!userId) throw new Error("Not signed in");
 
       const ext = file.name.split(".").pop() || "bin";
-      const uploadId = uuidNotAvailable();
+      const uploadId = uuidV4();
       const path = `${userId}/${uploadId}.${ext}`;
 
       const { error: upErr } = await supabase.storage
