@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Zap, Shield, Image as ImageIcon, ArrowRight, Check } from "lucide-react";
-import logo from "@/assets/snapcut-logo.png.asset.json";
+import logo from "@/assets/snapcut-logo.png";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -60,7 +60,7 @@ function Index() {
             <div className="absolute -inset-8 bg-gradient-brand opacity-20 blur-3xl" />
             <div className="glass relative aspect-square w-full overflow-hidden rounded-3xl p-6">
               <div className="checker-bg flex h-full w-full items-center justify-center rounded-2xl">
-                <img src={logo.url} alt="SnapCut AI demo" className="h-2/3 w-2/3 object-contain drop-shadow-2xl" />
+                <img src={logo} alt="SnapCut AI demo" className="h-2/3 w-2/3 object-contain drop-shadow-2xl" />
               </div>
             </div>
           </div>

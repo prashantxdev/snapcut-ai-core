@@ -1,4 +1,4 @@
-import logo from "@/assets/snapcut-logo.png.asset.json";
+import logo from "@/assets/snapcut-logo.png";
 import { Link } from "@tanstack/react-router";
 
 interface LogoProps {
@@ -11,7 +11,7 @@ export function Logo({ showText = true, size = 32, linkTo = "/" }: LogoProps) {
   const content = (
     <span className="flex items-center gap-2">
       <img
-        src={logo.url}
+        src={logo}
         alt="SnapCut AI"
         width={size}
         height={size}

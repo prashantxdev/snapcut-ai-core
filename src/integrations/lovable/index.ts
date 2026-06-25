@@ -12,6 +12,27 @@ type SignInOptions = {
 export const lovable = {
   auth: {
     signInWithOAuth: async (provider: "google" | "apple" | "microsoft" | "lovable", opts?: SignInOptions) => {
+      const isLocalhost = typeof window !== "undefined" && (
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        window.location.hostname.startsWith("192.168.")
+      );
+
+      if (isLocalhost) {
+        const redirectTo = opts?.redirect_uri || window.location.origin + "/app";
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: provider === "lovable" ? "google" : (provider as any),
+          options: {
+            redirectTo,
+            queryParams: opts?.extraParams,
+          },
+        });
+        if (error) {
+          return { error, redirected: false };
+        }
+        return { error: null, redirected: true };
+      }
+
       const result = await lovableAuth.signInWithOAuth(provider, {
         redirect_uri: opts?.redirect_uri,
         extraParams: {

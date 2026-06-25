@@ -11,7 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import logo from "../assets/snapcut-logo.png.asset.json";
+import logo from "../assets/snapcut-logo.png";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -98,7 +98,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         rel: "icon",
         type: "image/png",
-        href: logo.url,
+        href: logo,
       },
       {
         rel: "preconnect",
