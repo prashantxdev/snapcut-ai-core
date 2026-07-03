@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { v4 as uuidV4 } from "@/lib/uuid";
@@ -31,6 +31,11 @@ function WorkspacePage() {
   const [result, setResult] = useState<ResultState | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedPreviewUrl, setSelectedPreviewUrl] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
   const process = useServerFn(processUpload);
   const queryClient = useQueryClient();
 
@@ -59,8 +64,26 @@ function WorkspacePage() {
       });
       return { ...res, filename: file.name };
     },
-    onSuccess: async (res, file) => {
-      setResult({ originalUrl: selectedPreviewUrl || "", resultUrl: res.resultUrl, filename: file.name });
+    onSuccess: async (data, file) => {
+      console.log("API response:", data);
+      console.log("Result URL:", data.resultUrl);
+
+      const rawUrl = data.resultUrl;
+
+      if (!rawUrl) {
+        toast.error("No image URL returned from backend");
+        return;
+      }
+
+      let finalUrl = rawUrl;
+      if (finalUrl.startsWith("/")) {
+        finalUrl = window.location.origin + finalUrl;
+        console.log("Converted relative URL to absolute URL:", finalUrl);
+      }
+
+      console.log("Final processed image URL to load:", finalUrl);
+
+      setResult({ originalUrl: selectedPreviewUrl || "", resultUrl: finalUrl, filename: file.name });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success("Background removed!");
     },
@@ -69,17 +92,100 @@ function WorkspacePage() {
     },
   });
 
+  useEffect(() => {
+    if (!result?.resultUrl) {
+      setVerifying(false);
+      setVerifyError(null);
+      setImageLoaded(false);
+      return;
+    }
+
+    let active = true;
+    const verifyUrl = async () => {
+      setVerifying(true);
+      setVerifyError(null);
+      setImageLoaded(false);
+      
+      console.log("Verifying image URL accessibility via fetch:", result.resultUrl);
+      try {
+        const response = await fetch(result.resultUrl);
+        if (!active) return;
+
+        console.log("Image fetch response status:", response.status);
+        if (!response.ok) {
+          if ([403, 404, 500].includes(response.status)) {
+            console.error(`Image request returned HTTP status code ${response.status}`);
+          }
+          throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+        }
+
+        const contentType = response.headers.get("content-type");
+        console.log("Fetched image Content-Type:", contentType);
+        if (!contentType || !contentType.startsWith("image/")) {
+          throw new Error(`Invalid content type: expected an image but received "${contentType}"`);
+        }
+
+        const supportedTypes = ["image/png", "image/jpeg", "image/webp", "image/jpg"];
+        const cleanType = contentType.split(";")[0].trim();
+        if (!supportedTypes.includes(cleanType)) {
+          throw new Error(`Unsupported image type "${cleanType}". Must be PNG, JPEG, or WebP.`);
+        }
+
+        setVerifying(false);
+      } catch (err) {
+        if (!active) return;
+        console.error("Verification failed for image URL:", result.resultUrl, err);
+        setVerifyError(err instanceof Error ? err.message : "Failed to load image");
+        setVerifying(false);
+      }
+    };
+
+    verifyUrl();
+
+    return () => {
+      active = false;
+    };
+  }, [result?.resultUrl]);
+
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
     const url = URL.createObjectURL(file);
     setSelectedPreviewUrl(url);
   };
 
+  async function handleDownload() {
+    if (!result?.resultUrl) return;
+    setDownloading(true);
+    console.log("Downloading image from URL:", result.resultUrl);
+    try {
+      const res = await fetch(result.resultUrl);
+      if (!res.ok) throw new Error(`Download failed with status ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = result.filename.replace(/\.[^.]+$/, "") + "-snapcut.png";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      toast.success("Image downloaded!");
+    } catch (err) {
+      console.error("Download failed:", err);
+      toast.error("Download failed. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   function reset() {
     if (selectedPreviewUrl) URL.revokeObjectURL(selectedPreviewUrl);
     setSelectedFile(null);
     setSelectedPreviewUrl(null);
     setResult(null);
+    setVerifyError(null);
+    setVerifying(false);
+    setImageLoaded(false);
   }
 
   return (
@@ -153,16 +259,58 @@ function WorkspacePage() {
               </div>
               <div className="glass rounded-2xl p-3 shadow-glow">
                 <div className="mb-2 text-xs font-medium text-muted-foreground">Result</div>
-                <div className="checker-bg flex aspect-square items-center justify-center overflow-hidden rounded-xl">
-                  <img src={result.resultUrl} alt="result" className="max-h-full max-w-full object-contain" />
+                <div className="checker-bg relative flex aspect-square items-center justify-center overflow-hidden rounded-xl w-full h-full">
+                  {(verifying || (!imageLoaded && !verifyError)) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/50 backdrop-blur-sm rounded-xl">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {verifying ? "Verifying image..." : "Loading image..."}
+                      </p>
+                    </div>
+                  )}
+
+                  {verifyError && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 p-4 text-center rounded-xl animate-in fade-in duration-200">
+                      <span className="text-red-500 font-semibold mb-1 text-sm">Error Loading Image</span>
+                      <p className="text-xs text-muted-foreground max-w-xs">{verifyError}</p>
+                    </div>
+                  )}
+
+                  {result.resultUrl && !verifyError && (
+                    <img
+                      src={result.resultUrl}
+                      alt="result"
+                      className={`max-h-full max-w-full object-contain transition-opacity duration-300 ${
+                        imageLoaded ? "opacity-100" : "opacity-0"
+                      }`}
+                      onLoad={() => {
+                        console.log("Image tag loaded successfully for URL:", result.resultUrl);
+                        setImageLoaded(true);
+                      }}
+                      onError={(e) => {
+                        console.error("Image element failed to load for URL:", result.resultUrl);
+                        setVerifyError("Image element failed to render. Please verify backend state.");
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button asChild className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90">
-                <a href={result.resultUrl} download={result.filename.replace(/\.[^.]+$/, "") + "-snapcut.png"}>
-                  <Download className="mr-1 h-4 w-4" /> Download PNG
-                </a>
+              <Button
+                onClick={handleDownload}
+                disabled={downloading || verifying || !!verifyError}
+                className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90 min-w-[150px]"
+              >
+                {downloading ? (
+                  <>
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Downloading...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-1 h-4 w-4" /> Download PNG
+                  </>
+                )}
               </Button>
               <Button variant="outline" onClick={reset}>
                 <RotateCcw className="mr-1 h-4 w-4" /> Process another

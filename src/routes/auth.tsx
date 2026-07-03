@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link, useSearch } from "@tanstack/react-r
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import type { Session } from "@supabase/supabase-js";
 import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
       if (data.session) navigate({ to: "/app" });
     });
   }, [navigate]);
