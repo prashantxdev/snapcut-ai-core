@@ -8,7 +8,7 @@ import { processUpload } from "@/lib/processing.functions";
 import { AppShell } from "@/components/AppShell";
 import { UploadDropzone } from "@/components/UploadDropzone";
 import { Button } from "@/components/ui/button";
-import { Download, RotateCcw } from "lucide-react";
+import { Download, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/app")({
@@ -29,7 +29,8 @@ type ResultState = {
 
 function WorkspacePage() {
   const [result, setResult] = useState<ResultState | null>(null);
-  const [originalPreview, setOriginalPreview] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedPreviewUrl, setSelectedPreviewUrl] = useState<string | null>(null);
   const process = useServerFn(processUpload);
   const queryClient = useQueryClient();
 
@@ -59,9 +60,7 @@ function WorkspacePage() {
       return { ...res, filename: file.name };
     },
     onSuccess: async (res, file) => {
-      const objUrl = URL.createObjectURL(file);
-      setOriginalPreview(objUrl);
-      setResult({ originalUrl: objUrl, resultUrl: res.resultUrl, filename: file.name });
+      setResult({ originalUrl: selectedPreviewUrl || "", resultUrl: res.resultUrl, filename: file.name });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       toast.success("Background removed!");
     },
@@ -70,9 +69,16 @@ function WorkspacePage() {
     },
   });
 
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    const url = URL.createObjectURL(file);
+    setSelectedPreviewUrl(url);
+  };
+
   function reset() {
-    if (originalPreview) URL.revokeObjectURL(originalPreview);
-    setOriginalPreview(null);
+    if (selectedPreviewUrl) URL.revokeObjectURL(selectedPreviewUrl);
+    setSelectedFile(null);
+    setSelectedPreviewUrl(null);
     setResult(null);
   }
 
@@ -86,20 +92,62 @@ function WorkspacePage() {
           </p>
         </div>
 
-        {!result ? (
+        {!selectedFile ? (
           <UploadDropzone
-            onFile={(f) => mutation.mutate(f)}
+            onFile={handleFileSelect}
             busy={mutation.isPending}
             busyLabel="Removing background…"
           />
+        ) : !result ? (
+          <div className="space-y-6">
+            <div className="mx-auto max-w-md">
+              <div className="glass relative rounded-2xl p-3 shadow-glow-violet transition-all duration-300">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">Uploaded Image</div>
+                <div className="checker-bg relative flex aspect-square items-center justify-center overflow-hidden rounded-xl">
+                  {selectedPreviewUrl && (
+                    <img
+                      src={selectedPreviewUrl}
+                      alt="uploaded preview"
+                      className="max-h-full max-w-full object-contain transition-transform hover:scale-105 duration-300"
+                    />
+                  )}
+                  {mutation.isPending && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/70 backdrop-blur-sm rounded-xl animate-in fade-in duration-300">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary mb-2" />
+                      <p className="text-sm font-medium">Removing background…</p>
+                      <p className="text-xs text-muted-foreground mt-1">This usually takes under 5 seconds.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button
+                onClick={() => mutation.mutate(selectedFile)}
+                disabled={mutation.isPending}
+                className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90 min-w-[180px] transition-all"
+              >
+                {mutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
+                  </>
+                ) : (
+                  "Remove Background"
+                )}
+              </Button>
+              <Button variant="outline" onClick={reset} disabled={mutation.isPending}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="glass rounded-2xl p-3">
                 <div className="mb-2 text-xs font-medium text-muted-foreground">Original</div>
                 <div className="checker-bg flex aspect-square items-center justify-center overflow-hidden rounded-xl">
-                  {originalPreview && (
-                    <img src={originalPreview} alt="original" className="max-h-full max-w-full object-contain" />
+                  {selectedPreviewUrl && (
+                    <img src={selectedPreviewUrl} alt="original" className="max-h-full max-w-full object-contain" />
                   )}
                 </div>
               </div>

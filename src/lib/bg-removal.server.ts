@@ -11,32 +11,30 @@ export async function removeBackground(input: {
   contentType: string;
   filename: string;
 }): Promise<RemoveBgResult> {
-  const apiKey = process.env.REMOVEBG_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "REMOVEBG_API_KEY is not configured. Add it via Lovable Cloud secrets to enable background removal."
-    );
-  }
-
-  const form = new FormData();
-  form.append("size", "auto");
-  form.append(
-    "image_file",
-    new Blob([input.bytes as BlobPart], { type: input.contentType }),
-    input.filename,
-  );
-
-  const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+  const res = await fetch("https://prashantxdev.app.n8n.cloud/webhook/remove-background", {
     method: "POST",
-    headers: { "X-Api-Key": apiKey },
-    body: form,
+    headers: {
+      "Content-Type": input.contentType,
+    },
+    body: new Blob([input.bytes as BlobPart]),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Remove.bg API error ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`Webhook error ${res.status}: ${text.slice(0, 300)}`);
   }
 
-  const buf = new Uint8Array(await res.arrayBuffer());
-  return { bytes: buf, contentType: "image/png" };
+  const data = (await res.json()) as { url?: string };
+  if (!data.url) {
+    throw new Error("Webhook response did not contain a result URL.");
+  }
+
+  const imgRes = await fetch(data.url);
+  if (!imgRes.ok) {
+    throw new Error(`Failed to fetch processed image from URL: ${data.url}`);
+  }
+
+  const buf = new Uint8Array(await imgRes.arrayBuffer());
+  const responseContentType = imgRes.headers.get("Content-Type") || "image/png";
+  return { bytes: buf, contentType: responseContentType };
 }
