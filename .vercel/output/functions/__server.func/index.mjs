@@ -53,6 +53,28 @@ var findRoute = /* @__PURE__ */ (() => {
 })();
 [].filter(Boolean);
 //#endregion
+//#region node_modules/nitro/dist/runtime/internal/error/utils.mjs
+function defineNitroErrorHandler(handler) {
+	return handler;
+}
+//#endregion
+//#region src/lib/nitro-error-handler.ts
+var nitro_error_handler_default = defineNitroErrorHandler((error, event) => {
+	console.error("[Nitro Error Handler] Caught exception:", error);
+	const responseBody = `Nitro Server Error
+
+Name: ${error instanceof Error ? error.name : "Error"}
+Message: ${error instanceof Error ? error.message : String(error)}
+
+Stack Trace:
+${(error instanceof Error ? error.stack : "") || "No stack trace available"}
+`;
+	return new Response(responseBody, {
+		status: 500,
+		headers: { "Content-Type": "text/plain; charset=utf-8" }
+	});
+});
+//#endregion
 //#region node_modules/nitro/dist/runtime/internal/error/prod.mjs
 var errorHandler = (error, event) => {
 	const res = defaultHandler(error, event);
@@ -90,7 +112,7 @@ function defaultHandler(error, event) {
 }
 //#endregion
 //#region #nitro/virtual/error-handler
-var errorHandlers = [errorHandler];
+var errorHandlers = [nitro_error_handler_default, errorHandler];
 async function error_handler_default(error, event) {
 	for (const handler of errorHandlers) try {
 		const response = await handler(error, event, { defaultHandler });
