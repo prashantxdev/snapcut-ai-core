@@ -6,8 +6,12 @@ import { createMockSupabaseClient } from './mock-client';
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
   // Fall back to process.env for SSR (server-side rendering)
-  const SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || process.env.SUPABASE_URL;
-  const SUPABASE_PUBLISHABLE_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY) || process.env.SUPABASE_PUBLISHABLE_KEY;
+  let SUPABASE_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || process.env.SUPABASE_URL;
+  let SUPABASE_PUBLISHABLE_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY) || process.env.SUPABASE_PUBLISHABLE_KEY;
+
+  // Normalize string "undefined" / "null" values that some bundlers/environments set
+  if (SUPABASE_URL === 'undefined' || SUPABASE_URL === 'null') SUPABASE_URL = undefined;
+  if (SUPABASE_PUBLISHABLE_KEY === 'undefined' || SUPABASE_PUBLISHABLE_KEY === 'null') SUPABASE_PUBLISHABLE_KEY = undefined;
 
   const isMock = !SUPABASE_URL || SUPABASE_URL.includes("xgconhzyasyyzvzpjahx");
   if (isMock) {

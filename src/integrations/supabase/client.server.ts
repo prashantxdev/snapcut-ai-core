@@ -7,8 +7,12 @@ import type { Database } from './types';
 import { createMockSupabaseClient } from './mock-client';
 
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  let SUPABASE_URL = process.env.SUPABASE_URL;
+  let SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Normalize string "undefined" / "null" values that some bundlers/environments set
+  if (SUPABASE_URL === 'undefined' || SUPABASE_URL === 'null') SUPABASE_URL = undefined;
+  if (SUPABASE_SERVICE_ROLE_KEY === 'undefined' || SUPABASE_SERVICE_ROLE_KEY === 'null') SUPABASE_SERVICE_ROLE_KEY = undefined;
 
   const isMock = !SUPABASE_URL || SUPABASE_URL.includes("xgconhzyasyyzvzpjahx");
   if (isMock) {

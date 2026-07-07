@@ -8,8 +8,12 @@ import type { Database } from './types'
 
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+    let SUPABASE_URL = process.env.SUPABASE_URL;
+    let SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+
+    // Normalize string "undefined" / "null" values that some bundlers/environments set
+    if (SUPABASE_URL === 'undefined' || SUPABASE_URL === 'null') SUPABASE_URL = undefined;
+    if (SUPABASE_PUBLISHABLE_KEY === 'undefined' || SUPABASE_PUBLISHABLE_KEY === 'null') SUPABASE_PUBLISHABLE_KEY = undefined;
 
     const isMock = !SUPABASE_URL || SUPABASE_URL.includes("xgconhzyasyyzvzpjahx");
 
