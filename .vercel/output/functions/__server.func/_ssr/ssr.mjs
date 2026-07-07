@@ -21,7 +21,7 @@ function consumeLastCapturedError() {
 	lastCapturedError = void 0;
 	return error;
 }
-function renderErrorPage() {
+function renderErrorPage(error) {
 	return `<!doctype html>
 <html lang="en">
   <head>
@@ -30,7 +30,7 @@ function renderErrorPage() {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font: 15px/1.5 system-ui, -apple-system, sans-serif; background: #fafafa; color: #111; display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 1.5rem; }
-      .card { max-width: 28rem; width: 100%; text-align: center; padding: 2rem; }
+      .card { max-width: 32rem; width: 100%; text-align: center; padding: 2rem; }
       h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
       p { color: #4b5563; margin: 0 0 1.5rem; }
       .actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
@@ -43,7 +43,8 @@ function renderErrorPage() {
     <div class="card">
       <h1>This page didn't load</h1>
       <p>Something went wrong on our end. You can try refreshing or head back home.</p>
-      <div class="actions">
+      ${error ? `<pre style="text-align: left; background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; padding: 1rem; border-radius: 0.5rem; overflow: auto; max-height: 250px; font-family: monospace; font-size: 12px; margin-top: 1rem; white-space: pre-wrap; word-break: break-all;">${error instanceof Error ? `${error.name}: ${error.message}\n\nStack:\n${error.stack}` : String(error)}</pre>` : ""}
+      <div class="actions" style="margin-top: 1.5rem;">
         <button class="primary" onclick="location.reload()">Try again</button>
         <a class="secondary" href="/">Go home</a>
       </div>
@@ -61,8 +62,9 @@ async function normalizeCatastrophicSsrResponse(response) {
 	if (!(response.headers.get("content-type") ?? "").includes("application/json")) return response;
 	const body = await response.clone().text();
 	if (!body.includes("\"unhandled\":true") || !body.includes("\"message\":\"HTTPError\"")) return response;
-	console.error(consumeLastCapturedError() ?? /* @__PURE__ */ new Error(`h3 swallowed SSR error: ${body}`));
-	return new Response(renderErrorPage(), {
+	const err = consumeLastCapturedError() ?? /* @__PURE__ */ new Error(`h3 swallowed SSR error: ${body}`);
+	console.error(err);
+	return new Response(renderErrorPage(err), {
 		status: 500,
 		headers: { "content-type": "text/html; charset=utf-8" }
 	});
@@ -72,7 +74,7 @@ var server_default = { async fetch(request, env, ctx) {
 		return await normalizeCatastrophicSsrResponse(await (await getServerEntry()).fetch(request, env, ctx));
 	} catch (error) {
 		console.error(error);
-		return new Response(renderErrorPage(), {
+		return new Response(renderErrorPage(error), {
 			status: 500,
 			headers: { "content-type": "text/html; charset=utf-8" }
 		});
