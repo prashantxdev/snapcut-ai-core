@@ -1,4 +1,3 @@
-import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 // Shared memory for storage and database
@@ -18,20 +17,10 @@ export const mockDb = globalForMock.mockDb as { credits: any[]; uploads: any[] }
 
 export const mockStorage = {
   async set(key: string, value: { bytes: Uint8Array; contentType: string }) {
-    if (typeof window === 'undefined') {
-      const { writeMockFile } = await import('./mock-storage.server');
-      await writeMockFile(key, value.bytes, value.contentType);
-    } else {
-      globalForMock.mockStorage.set(key, value);
-    }
+    globalForMock.mockStorage.set(key, value);
   },
   async get(key: string) {
-    if (typeof window === 'undefined') {
-      const { readMockFile } = await import('./mock-storage.server');
-      return await readMockFile(key);
-    } else {
-      return globalForMock.mockStorage.get(key) || null;
-    }
+    return globalForMock.mockStorage.get(key) || null;
   }
 };
 
@@ -51,25 +40,7 @@ export function initMockCredits(userId: string) {
   }
 }
 
-const UploadInput = z.object({
-  path: z.string(),
-  base64: z.string(),
-  contentType: z.string(),
-});
 
-// Client-to-server helper to upload files in mock mode
-export const uploadMockFileServer = createServerFn({ method: "POST" })
-  .inputValidator((input: unknown) => UploadInput.parse(input))
-  .handler(async ({ data }) => {
-    const binaryString = atob(data.base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    await mockStorage.set(data.path, { bytes, contentType: data.contentType });
-    return { success: true };
-  });
 
 const MOCK_USER = {
   id: "00000000-0000-0000-0000-000000000000",
@@ -316,27 +287,13 @@ export function createMockSupabaseClient() {
     storage: {
       from: (bucket: string) => ({
         upload: async (path: string, file: File | Blob, options?: any) => {
-          if (typeof window !== "undefined") {
-            const reader = new FileReader();
-            const base64Promise = new Promise<string>((resolve) => {
-              reader.onloadend = () => {
-                const base64String = (reader.result as string).split(",")[1];
-                resolve(base64String);
-              };
-            });
-            reader.readAsDataURL(file);
-            const base64 = await base64Promise;
-
-            await uploadMockFileServer({ data: { path, base64, contentType: file.type } });
+          let bytes: Uint8Array;
+          if (file instanceof Blob) {
+            bytes = new Uint8Array(await file.arrayBuffer());
           } else {
-            let bytes: Uint8Array;
-            if (file instanceof Blob) {
-              bytes = new Uint8Array(await file.arrayBuffer());
-            } else {
-              bytes = file as any;
-            }
-            await mockStorage.set(path, { bytes, contentType: options?.contentType || "application/octet-stream" });
+            bytes = file as any;
           }
+          await mockStorage.set(path, { bytes, contentType: options?.contentType || file.type || "application/octet-stream" });
           return { data: { path }, error: null };
         },
 
@@ -350,7 +307,12 @@ export function createMockSupabaseClient() {
         },
 
         createSignedUrl: async (path: string, expiry: number) => {
-          const signedUrl = `/api/mock-storage/download?path=${encodeURIComponent(path)}`;
+          const file = await mockStorage.get(path);
+          if (!file) {
+            return { data: null, error: new Error(`File not found: ${path}`) };
+          }
+          const blob = new Blob([file.bytes], { type: file.contentType });
+          const signedUrl = URL.createObjectURL(blob);
           return { data: { signedUrl }, error: null };
         },
       }),

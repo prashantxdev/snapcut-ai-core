@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { getDashboard } from "@/lib/dashboard.functions";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -19,10 +18,9 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function DashboardPage() {
-  const fetcher = useServerFn(getDashboard);
   const { data, isLoading, error } = useQuery({
     queryKey: ["dashboard"],
-    queryFn: () => fetcher(),
+    queryFn: () => getDashboard(),
   });
 
   return (

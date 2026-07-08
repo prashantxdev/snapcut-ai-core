@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { v4 as uuidV4 } from "@/lib/uuid";
 import { supabase } from "@/integrations/supabase/client";
 import { processUpload } from "@/lib/processing.functions";
@@ -54,7 +53,6 @@ function WorkspacePage() {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const process = useServerFn(processUpload);
   const queryClient = useQueryClient();
 
   // Load state on mount (client-side only to prevent SSR mismatch)
@@ -110,7 +108,7 @@ function WorkspacePage() {
         .upload(path, file, { contentType: file.type, upsert: false });
       if (upErr) throw new Error(upErr.message);
 
-      const res = await process({
+      const res = await processUpload({
         data: {
           uploadPath: path,
           originalFilename: file.name,

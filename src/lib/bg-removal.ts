@@ -1,5 +1,4 @@
-// Server-only background removal provider abstraction.
-// Swap providers by changing PROVIDER below or via env.
+// Client-side background removal provider abstraction.
 
 export type RemoveBgResult = {
   bytes: Uint8Array;

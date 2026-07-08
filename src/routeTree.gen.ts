@@ -19,7 +19,6 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
-import { Route as ApiMockStorageDownloadRouteImport } from './routes/api/mock-storage/download'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -70,11 +69,6 @@ const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
   path: '/app',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const ApiMockStorageDownloadRoute = ApiMockStorageDownloadRouteImport.update({
-  id: '/api/mock-storage/download',
-  path: '/api/mock-storage/download',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -86,7 +80,6 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/app': typeof AuthenticatedAppRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/api/mock-storage/download': typeof ApiMockStorageDownloadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -98,7 +91,6 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/app': typeof AuthenticatedAppRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/api/mock-storage/download': typeof ApiMockStorageDownloadRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -112,7 +104,6 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_authenticated/app': typeof AuthenticatedAppRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/api/mock-storage/download': typeof ApiMockStorageDownloadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -126,7 +117,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/app'
     | '/dashboard'
-    | '/api/mock-storage/download'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -138,7 +128,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/app'
     | '/dashboard'
-    | '/api/mock-storage/download'
   id:
     | '__root__'
     | '/'
@@ -151,7 +140,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/_authenticated/app'
     | '/_authenticated/dashboard'
-    | '/api/mock-storage/download'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -163,7 +151,6 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   TermsRoute: typeof TermsRoute
-  ApiMockStorageDownloadRoute: typeof ApiMockStorageDownloadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -238,13 +225,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/mock-storage/download': {
-      id: '/api/mock-storage/download'
-      path: '/api/mock-storage/download'
-      fullPath: '/api/mock-storage/download'
-      preLoaderRoute: typeof ApiMockStorageDownloadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -270,18 +250,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   TermsRoute: TermsRoute,
-  ApiMockStorageDownloadRoute: ApiMockStorageDownloadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
