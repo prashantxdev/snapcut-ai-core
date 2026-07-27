@@ -1,21 +1,12 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { LogOut, LayoutDashboard, Wand2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
-  async function handleSignOut() {
-    await queryClient.cancelQueries();
-    queryClient.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
-  }
+  const { signOut } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
@@ -34,7 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
             </Button>
           </nav>
-          <Button variant="ghost" size="sm" onClick={handleSignOut}>
+          <Button variant="ghost" size="sm" onClick={signOut}>
             <LogOut className="mr-1 h-4 w-4" /> Sign out
           </Button>
         </div>

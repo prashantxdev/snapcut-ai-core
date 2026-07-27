@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link, useSearch } from "@tanstack/react-r
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
-import type { Session } from "@supabase/supabase-js";
+import { useAuth } from "@/contexts/AuthContext";
 import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,41 +33,114 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const { user, session, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (data.session) navigate({ to: "/app" });
-    });
-  }, [navigate]);
+    console.log("[Auth] Current User state:", user);
+    console.log("[Auth] Current Session state:", session);
+    if (!authLoading && user) {
+      console.log("[Auth] User is logged in, redirecting to /app");
+      navigate({ to: "/app", replace: true });
+    }
+  }, [user, session, authLoading, navigate]);
 
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({
+        // 1. Check if user already exists
+        console.log("[Auth] Checking if user already exists for:", email);
+        const { data: exists, error: checkError } = await supabase.rpc('check_user_exists', { email_to_check: email });
+        
+        if (checkError) {
+          console.error("[Auth] check_user_exists RPC failed:", checkError);
+        }
+        
+        console.log("[Auth] Is email registered:", exists);
+        if (exists) {
+          toast.error("This email is already registered. Please sign in.");
+          setMode("signin");
+          setLoading(false);
+          return;
+        }
+
+        // 2. Perform signup
+        console.log("[Auth] Sending SignUp request for:", email);
+        const signupResponse = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: window.location.origin + "/app" },
         });
-        if (error) throw error;
         
-        if (data.session) {
+        console.log("[Auth] Signup Response:", signupResponse);
+        if (signupResponse.error) {
+          console.error("[Auth] Supabase Error Object (SignUp):", signupResponse.error);
+          throw signupResponse.error;
+        }
+
+        if (signupResponse.data?.session) {
           toast.success("Account created! Logging you in...");
           navigate({ to: "/app" });
         } else {
-          toast.success("Account created! Please check your email to confirm your account before signing in.", {
-            duration: 10000,
-          });
-          setMode("signin");
+          // Since we added the DB trigger, the user is auto-confirmed. Let's automatically sign them in.
+          console.log("[Auth] Auto-confirm trigger active, attempting immediate sign in...");
+          const signInResponse = await supabase.auth.signInWithPassword({ email, password });
+          console.log("[Auth] Auto Signin Response:", signInResponse);
+          
+          if (signInResponse.error) {
+            console.error("[Auth] Auto Signin Error:", signInResponse.error);
+            toast.success("Account created successfully! Please sign in with your password.");
+            setMode("signin");
+          } else {
+            toast.success("Account created successfully! Logging you in...");
+            navigate({ to: "/app" });
+          }
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        // Sign In
+        console.log("[Auth] Sending SignIn request for:", email);
+        const signinResponse = await supabase.auth.signInWithPassword({ email, password });
+        console.log("[Auth] Signin Response:", signinResponse);
+        
+        if (signinResponse.error) {
+          console.error("[Auth] Supabase Error Object (SignIn):", signinResponse.error);
+          throw signinResponse.error;
+        }
+        
+        toast.success("Signed in successfully!");
         navigate({ to: "/app" });
       }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Authentication failed");
+    } catch (err: any) {
+      console.error("[Auth] Captured error in handleEmail:", err);
+      
+      let friendlyMessage = "Something went wrong.";
+      const message = err.message || "";
+      const status = err.status;
+
+      if (message.toLowerCase().includes("network") || message.toLowerCase().includes("fetch")) {
+        friendlyMessage = "Network error. Please check your internet connection.";
+      } else if (message.includes("Email not confirmed") || message.includes("Email not verified")) {
+        friendlyMessage = "Email not verified. Please check your inbox to confirm your account.";
+      } else if (message === "Invalid login credentials" || status === 400) {
+        // Check if user exists
+        try {
+          const { data: exists } = await supabase.rpc('check_user_exists', { email_to_check: email });
+          if (exists === false) {
+            friendlyMessage = "User does not exist. Please sign up first.";
+          } else {
+            friendlyMessage = "Incorrect password. Please try again.";
+          }
+        } catch (checkErr) {
+          friendlyMessage = "Incorrect password.";
+        }
+      } else if (message.includes("already registered") || message.includes("already exists")) {
+        friendlyMessage = "This email is already registered. Please sign in.";
+      } else {
+        friendlyMessage = message;
+      }
+      
+      toast.error(friendlyMessage);
     } finally {
       setLoading(false);
     }
