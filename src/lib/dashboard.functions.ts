@@ -1,6 +1,24 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export const getDashboard = async () => {
+export interface DashboardData {
+  credits: {
+    plan: string;
+    daily_used: number;
+    daily_limit: number;
+    pack_credits: number;
+    daily_reset_at: string;
+  };
+  uploads: {
+    id: string;
+    status: string;
+    original_filename: string | null;
+    created_at: string;
+    expires_at: string;
+    result_path: string | null;
+  }[];
+}
+
+export const getDashboard = async (): Promise<DashboardData> => {
   const { data: userData, error: authErr } = await supabase.auth.getUser();
   if (authErr || !userData?.user) {
     throw new Error("Unauthorized: Not signed in");

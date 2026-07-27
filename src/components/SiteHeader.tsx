@@ -3,14 +3,14 @@ import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import type { Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 
 export function SiteHeader() {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e: AuthChangeEvent, s: Session | null) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
 
