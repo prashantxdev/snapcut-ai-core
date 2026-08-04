@@ -28,8 +28,9 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-border/50">
-        <div className="mx-auto max-w-7xl px-4 py-4 text-xs text-muted-foreground sm:px-6">
-          © {new Date().getFullYear()} SnapCut AI. All rights reserved.
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-muted-foreground sm:flex-row sm:px-6">
+          <div>© {new Date().getFullYear()} SnapCut AI. All rights reserved.</div>
+          <div>Developed by Prashant Kumar</div>
         </div>
       </div>
     </footer>
