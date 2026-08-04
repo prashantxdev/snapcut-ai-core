@@ -1,15 +1,31 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { v4 as uuidV4 } from "@/lib/uuid";
 import { supabase } from "@/integrations/supabase/client";
 import { processUpload } from "@/lib/processing.functions";
 import { AppShell } from "@/components/AppShell";
 import { UploadDropzone } from "@/components/UploadDropzone";
+import { BeforeAfterSlider } from "@/components/ui/BeforeAfterSlider";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/button";
-import { Download, RotateCcw, Loader2, Trash2, Clock, Eye, Sparkles } from "lucide-react";
+import {
+  Download,
+  RotateCcw,
+  Loader2,
+  Trash2,
+  Clock,
+  Eye,
+  Sparkles,
+  Search,
+  ArrowUpDown,
+  Wand2,
+  SlidersHorizontal,
+  CheckCircle2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   fileToBase64,
   urlToBase64,
@@ -44,6 +60,10 @@ function WorkspacePage() {
   const [activeTab, setActiveTab] = useState<string>("editor");
   const [history, setHistory] = useState<HistoryItem[]>([]);
 
+  // Search & Filter state for History tab
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+
   const [result, setResult] = useState<ResultState | null>(null);
   const [selectedPreviewUrl, setSelectedPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -54,8 +74,35 @@ function WorkspacePage() {
   const [downloading, setDownloading] = useState(false);
 
   const queryClient = useQueryClient();
+  const location = useLocation();
 
-  // Load state on mount (client-side only to prevent SSR mismatch)
+  const handleTabChange = (val: string) => {
+    setActiveTab(val);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (val === "history") {
+        url.searchParams.set("tab", "history");
+      } else {
+        url.searchParams.delete("tab");
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
+
+  // Handle URL query tab sync on location change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(location.search);
+      const tabParam = urlParams.get("tab");
+      if (tabParam === "history") {
+        setActiveTab("history");
+      } else {
+        setActiveTab("editor");
+      }
+    }
+  }, [location.search]);
+
+  // Load state on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       const loadSavedData = async () => {
@@ -84,7 +131,7 @@ function WorkspacePage() {
     }
   }, []);
 
-  // Sync active editor state to localStorage whenever it changes
+  // Sync active editor state to localStorage
   useEffect(() => {
     saveActiveState({
       filename: selectedFile?.name || null,
@@ -157,14 +204,13 @@ function WorkspacePage() {
         setHistory(updatedHistory);
         setResult(newResult);
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success("Background removed!");
+        toast.success("Background removed successfully!");
       } catch (err) {
         console.error("Failed to convert result image to base64", err);
-        // Fallback to storing raw URL
         const originalBase64 = selectedPreviewUrl || "";
         setResult({ originalUrl: originalBase64, resultUrl: finalUrl, filename: file.name });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success("Background removed!");
+        toast.success("Background removed successfully!");
       }
     },
     onError: (err) => {
@@ -192,7 +238,7 @@ function WorkspacePage() {
       setVerifying(true);
       setVerifyError(null);
       setImageLoaded(false);
-      
+
       console.log("Verifying image URL accessibility via fetch:", result.resultUrl);
       try {
         const response = await fetch(result.resultUrl);
@@ -267,7 +313,7 @@ function WorkspacePage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
-      toast.success("Image downloaded!");
+      toast.success("Transparent PNG downloaded!");
     } catch (err) {
       console.error("Download failed:", err);
       toast.error("Download failed. Please try again.");
@@ -314,7 +360,7 @@ function WorkspacePage() {
         resultUrl: item.resultBase64,
         filename: item.filename,
       });
-      setActiveTab("editor");
+      handleTabChange("editor");
       toast.success(`Loaded ${item.filename} into workspace`);
     } catch (e) {
       console.error(e);
@@ -333,203 +379,264 @@ function WorkspacePage() {
     toast.success("Image downloaded!");
   };
 
+  // Filtered & Sorted History List
+  const filteredHistory = useMemo(() => {
+    return history
+      .filter((item) => item.filename.toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => (sortOrder === "newest" ? b.timestamp - a.timestamp : a.timestamp - b.timestamp));
+  }, [history, searchQuery, sortOrder]);
+
   return (
     <AppShell>
-      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight">Workspace</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Drop an image to get a transparent PNG. Max 10 MB, 5000×5000.
-          </p>
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        {/* Workspace Title & Tab Navigation Header */}
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-foreground">AI Background Remover</h1>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Remove image backgrounds in seconds with sub-pixel edge matted transparency.
+            </p>
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-8 grid w-full max-w-[400px] grid-cols-2">
-            <TabsTrigger value="editor">Remove Background</TabsTrigger>
-            <TabsTrigger value="history">History ({history.length})</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          <TabsList className="mb-8 grid w-full max-w-[420px] grid-cols-2 rounded-2xl bg-card/80 p-1.5 border border-border/60 shadow-inner">
+            <TabsTrigger
+              value="editor"
+              className="rounded-xl py-2 text-xs font-semibold transition-all data-[state=active]:bg-gradient-brand data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow"
+            >
+              <Wand2 className="mr-2 h-3.5 w-3.5" /> Remove Background
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="rounded-xl py-2 text-xs font-semibold transition-all data-[state=active]:bg-gradient-brand data-[state=active]:text-primary-foreground data-[state=active]:shadow-glow"
+            >
+              <Clock className="mr-2 h-3.5 w-3.5" /> History ({history.length})
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="editor">
+          {/* TAB 1: EDITOR / UPLOAD */}
+          <TabsContent value="editor" className="space-y-8 animate-in fade-in duration-300">
             {!selectedFile ? (
               <UploadDropzone
                 onFile={handleFileSelect}
                 busy={mutation.isPending}
-                busyLabel="Removing background…"
+                busyLabel="Removing background with AI…"
               />
             ) : !result ? (
-              <div className="space-y-6">
-                <div className="mx-auto max-w-md">
-                  <div className="glass relative rounded-2xl p-3 shadow-glow-violet transition-all duration-300">
-                    <div className="mb-2 text-xs font-medium text-muted-foreground">Uploaded Image</div>
-                    <div className="checker-bg relative flex aspect-square items-center justify-center overflow-hidden rounded-xl">
-                      {selectedPreviewUrl && (
-                        <img
-                          src={selectedPreviewUrl}
-                          alt="uploaded preview"
-                          className="max-h-full max-w-full object-contain transition-transform hover:scale-105 duration-300"
-                        />
-                      )}
-                      {mutation.isPending && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/70 backdrop-blur-sm rounded-xl animate-in fade-in duration-300">
-                          <Loader2 className="h-10 w-10 animate-spin text-primary mb-2" />
-                          <p className="text-sm font-medium">Removing background…</p>
-                          <p className="text-xs text-muted-foreground mt-1">This usually takes under 5 seconds.</p>
+              <div className="space-y-8 max-w-2xl mx-auto">
+                <div className="glass-card relative rounded-3xl p-4 sm:p-6 shadow-glow-violet border border-border/60 bg-card/60">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Original Image Preview
+                    </span>
+                    <span className="text-[11px] font-mono text-muted-foreground truncate max-w-[200px]">
+                      {selectedFile.name}
+                    </span>
+                  </div>
+
+                  <div className="checker-bg relative flex aspect-square max-h-[460px] w-full items-center justify-center overflow-hidden rounded-2xl border border-border/40">
+                    {selectedPreviewUrl && (
+                      <img
+                        src={selectedPreviewUrl}
+                        alt="uploaded preview"
+                        className="max-h-full max-w-full object-contain transition-transform hover:scale-105 duration-300"
+                      />
+                    )}
+
+                    {/* AI Processing Overlay Banner */}
+                    {mutation.isPending && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md rounded-2xl p-6 text-center animate-in fade-in duration-300">
+                        <div className="relative mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-brand-soft text-primary shadow-glow">
+                          <Loader2 className="h-8 w-8 animate-spin text-primary" />
                         </div>
-                      )}
-                    </div>
+                        <h3 className="text-base font-bold text-foreground">AI Processing in Progress</h3>
+                        <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                          Detecting foreground subjects, hair matted edges, and removing background pixels…
+                        </p>
+
+                        {/* Animated Scanning Beam line */}
+                        <div className="relative mt-6 w-full max-w-xs h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="absolute inset-0 bg-gradient-brand animate-pulse" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-3">
+
+                <div className="flex flex-wrap items-center justify-center gap-4">
                   <Button
                     onClick={() => mutation.mutate(selectedFile)}
                     disabled={mutation.isPending}
-                    className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90 min-w-[180px] transition-all"
+                    className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-95 min-w-[200px] py-6 rounded-2xl font-bold text-sm transition-all"
                   >
                     {mutation.isPending ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing AI…
                       </>
                     ) : (
-                      "Remove Background"
+                      <>
+                        <Sparkles className="mr-2 h-4 w-4" /> Remove Background
+                      </>
                     )}
                   </Button>
-                  <Button variant="outline" onClick={reset} disabled={mutation.isPending}>
+                  <Button
+                    variant="outline"
+                    onClick={reset}
+                    disabled={mutation.isPending}
+                    className="rounded-2xl py-6 border-border/60 text-muted-foreground hover:text-foreground hover:bg-accent/40 text-sm font-semibold"
+                  >
                     Cancel
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="glass rounded-2xl p-3">
-                    <div className="mb-2 text-xs font-medium text-muted-foreground">Original</div>
-                    <div className="checker-bg flex aspect-square items-center justify-center overflow-hidden rounded-xl">
-                      {selectedPreviewUrl && (
-                        <img src={selectedPreviewUrl} alt="original" className="max-h-full max-w-full object-contain" />
-                      )}
+              <div className="space-y-8">
+                {/* Result Headline Banner */}
+                <div className="flex items-center justify-between rounded-2xl bg-primary/10 border border-primary/20 p-4 backdrop-blur-md">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-brand text-primary-foreground shadow-glow">
+                      <CheckCircle2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-foreground">Background Removed Successfully!</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Drag the center slider below to compare original vs processed HD output.
+                      </p>
                     </div>
                   </div>
-                  <div className="glass rounded-2xl p-3 shadow-glow">
-                    <div className="mb-2 text-xs font-medium text-muted-foreground">Result</div>
-                    <div className="checker-bg relative flex aspect-square items-center justify-center overflow-hidden rounded-xl w-full h-full">
-                      {(verifying || (!imageLoaded && !verifyError)) && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/50 backdrop-blur-sm rounded-xl">
-                          <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-                          <p className="text-xs font-medium text-muted-foreground">
-                            {verifying ? "Verifying image..." : "Loading image..."}
-                          </p>
-                        </div>
-                      )}
-
-                      {verifyError && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 p-4 text-center rounded-xl animate-in fade-in duration-200">
-                          <span className="text-red-500 font-semibold mb-1 text-sm">Error Loading Image</span>
-                          <p className="text-xs text-muted-foreground max-w-xs">{verifyError}</p>
-                        </div>
-                      )}
-
-                      {result.resultUrl && !verifyError && (
-                        <img
-                          src={result.resultUrl}
-                          alt="result"
-                          className={`max-h-full max-w-full object-contain transition-opacity duration-300 ${
-                            imageLoaded ? "opacity-100" : "opacity-0"
-                          }`}
-                          onLoad={() => {
-                            console.log("Image tag loaded successfully for URL:", result.resultUrl);
-                            setImageLoaded(true);
-                          }}
-                          onError={(e) => {
-                            console.error("Image element failed to load for URL:", result.resultUrl);
-                            setVerifyError("Image element failed to render. Please verify backend state.");
-                          }}
-                        />
-                      )}
-                    </div>
-                  </div>
+                  <span className="hidden sm:inline-flex rounded-full bg-secondary/20 border border-secondary/30 px-3 py-1 text-xs font-bold text-secondary">
+                    1 Credit Used
+                  </span>
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-3">
+
+                {/* Interactive Before/After Comparison Slider */}
+                <div className="max-w-4xl mx-auto">
+                  <BeforeAfterSlider
+                    originalUrl={result.originalUrl}
+                    resultUrl={result.resultUrl}
+                    className="h-[460px] w-full"
+                    onImageLoad={() => setImageLoaded(true)}
+                    onImageError={() => setVerifyError("Failed to render processed output")}
+                  />
+                </div>
+
+                {/* Quick Action Controls */}
+                <div className="flex flex-wrap items-center justify-center gap-4 pt-4">
                   <Button
                     onClick={handleDownload}
                     disabled={downloading || verifying || !!verifyError}
-                    className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90 min-w-[150px]"
+                    className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-95 min-w-[180px] py-6 rounded-2xl font-bold text-sm transition-all"
                   >
                     {downloading ? (
                       <>
-                        <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Downloading...
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Downloading...
                       </>
                     ) : (
                       <>
-                        <Download className="mr-1 h-4 w-4" /> Download PNG
+                        <Download className="mr-2 h-4 w-4" /> Download Transparent PNG
                       </>
                     )}
                   </Button>
-                  <Button variant="outline" onClick={reset}>
-                    <RotateCcw className="mr-1 h-4 w-4" /> Process another
+                  <Button
+                    variant="outline"
+                    onClick={reset}
+                    className="rounded-2xl py-6 border-border/60 text-foreground hover:bg-accent/40 text-sm font-semibold"
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" /> Remove Another Background
                   </Button>
                 </div>
               </div>
             )}
           </TabsContent>
 
+          {/* TAB 2: HISTORY */}
           <TabsContent value="history" className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Saved Images</h2>
-                <p className="text-xs text-muted-foreground">
-                  Saved locally in your browser. Cleared automatically if storage runs low.
-                </p>
+            {/* Filter & Action Toolbar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 flex-1 max-w-md">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search history by filename…"
+                    className="w-full rounded-2xl border border-input bg-card/60 pl-10 pr-4 py-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 rounded-2xl border border-input bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+                  <ArrowUpDown className="h-3.5 w-3.5 text-primary" />
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as "newest" | "oldest")}
+                    className="bg-transparent text-foreground focus:outline-none cursor-pointer text-xs font-semibold"
+                  >
+                    <option value="newest">Newest First</option>
+                    <option value="oldest">Oldest First</option>
+                  </select>
+                </div>
               </div>
+
               {history.length > 0 && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleClearHistory}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer"
+                  className="rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold cursor-pointer shrink-0"
                 >
-                  <Trash2 className="mr-1 h-4 w-4" /> Clear History
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Clear History
                 </Button>
               )}
             </div>
 
-            {history.length === 0 ? (
-              <div className="glass flex flex-col items-center rounded-2xl p-12 text-center">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Clock className="h-6 w-6" />
-                </div>
-                <h3 className="font-semibold text-lg">No processed images</h3>
-                <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-                  Upload and process images to see them saved in your local history tab.
-                </p>
-                <Button
-                  onClick={() => setActiveTab("editor")}
-                  className="mt-6 bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90"
-                >
-                  <Sparkles className="mr-2 h-4 w-4" /> Start Removing Backgrounds
-                </Button>
-              </div>
+            {/* Empty State */}
+            {filteredHistory.length === 0 ? (
+              <EmptyState
+                icon={Clock}
+                title={searchQuery ? "No matching history found" : "No Processed Images Yet"}
+                description={
+                  searchQuery
+                    ? `No images in your local history match "${searchQuery}".`
+                    : "Upload an image in the studio workspace to start generating transparent HD PNGs."
+                }
+                actionLabel="Start Removing Backgrounds"
+                onAction={() => setActiveTab("editor")}
+                actionIcon={Sparkles}
+                className="py-16"
+              />
             ) : (
-              <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-                {history.map((item) => (
-                  <div
+              /* Image History Card Grid */
+              <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3">
+                {filteredHistory.map((item) => (
+                  <motion.div
                     key={item.id}
-                    className="glass group relative overflow-hidden rounded-2xl border border-border/50 shadow-sm transition-all duration-300 hover:shadow-glow-violet/20 hover:border-primary/20 flex flex-col"
+                    whileHover={{ y: -4 }}
+                    className="glass-card group relative overflow-hidden rounded-3xl border border-border/50 bg-card/40 flex flex-col transition-all duration-300"
                   >
-                    <div className="checker-bg relative aspect-square flex items-center justify-center overflow-hidden rounded-t-xl bg-muted/20 border-b border-border/50">
+                    {/* Image Preview Window */}
+                    <div className="checker-bg relative aspect-square w-full flex items-center justify-center overflow-hidden rounded-t-3xl border-b border-border/40 p-4">
                       <img
                         src={item.resultBase64}
                         alt={item.filename}
-                        className="max-h-[90%] max-w-[90%] object-contain transition-transform duration-300 group-hover:scale-105"
+                        className="max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
                       />
 
-                      <div className="absolute inset-0 bg-background/70 opacity-0 backdrop-blur-[2px] transition-opacity duration-300 group-hover:opacity-100 flex items-center justify-center gap-3">
+                      {/* Tag Badge */}
+                      <div className="absolute top-3 left-3 rounded-full bg-background/80 border border-border/50 px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground backdrop-blur-md">
+                        PNG
+                      </div>
+
+                      {/* Hover Overlay Action Controls */}
+                      <div className="absolute inset-0 bg-background/80 opacity-0 backdrop-blur-md transition-opacity duration-300 group-hover:opacity-100 flex items-center justify-center gap-3">
                         <Button
                           size="icon"
                           variant="secondary"
                           onClick={() => handleOpenHistoryItem(item)}
                           title="Open in Workspace"
-                          className="h-10 w-10 rounded-full shadow-md cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all duration-200"
+                          className="h-10 w-10 rounded-full shadow-glow cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all duration-200"
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -538,7 +645,7 @@ function WorkspacePage() {
                           variant="secondary"
                           onClick={(e) => handleDownloadHistoryItem(item.filename, item.resultBase64, e)}
                           title="Download PNG"
-                          className="h-10 w-10 rounded-full shadow-md cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all duration-200"
+                          className="h-10 w-10 rounded-full shadow-glow cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all duration-200"
                         >
                           <Download className="h-4 w-4" />
                         </Button>
@@ -547,20 +654,21 @@ function WorkspacePage() {
                           variant="secondary"
                           onClick={(e) => handleDeleteHistoryItem(item.id, e)}
                           title="Delete"
-                          className="h-10 w-10 rounded-full shadow-md cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-all duration-200"
+                          className="h-10 w-10 rounded-full shadow-glow cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-all duration-200"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
 
+                    {/* Card Footer Details */}
                     <div className="p-4 flex-1 flex flex-col justify-between">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-sm text-foreground" title={item.filename}>
+                        <p className="truncate font-bold text-xs text-foreground" title={item.filename}>
                           {item.filename}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
+                        <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1.5">
+                          <Clock className="h-3 w-3 text-primary" />
                           {new Date(item.timestamp).toLocaleString(undefined, {
                             month: "short",
                             day: "numeric",
@@ -570,7 +678,7 @@ function WorkspacePage() {
                         </p>
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             )}
@@ -579,4 +687,4 @@ function WorkspacePage() {
       </div>
     </AppShell>
   );
-}
+}

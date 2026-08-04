@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
+import { motion } from "framer-motion";
 
 const searchSchema = z.object({
   mode: z.enum(["signin", "signup"]).optional(),
@@ -48,7 +49,6 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
-        // 1. Check if user already exists
         console.log("[Auth] Checking if user already exists for:", email);
         const { data: exists, error: checkError } = await supabase.rpc('check_user_exists', { email_to_check: email });
         
@@ -64,7 +64,6 @@ function AuthPage() {
           return;
         }
 
-        // 2. Perform signup
         console.log("[Auth] Sending SignUp request for:", email);
         const signupResponse = await supabase.auth.signUp({
           email,
@@ -82,7 +81,6 @@ function AuthPage() {
           toast.success("Account created! Logging you in...");
           navigate({ to: "/app" });
         } else {
-          // Since we added the DB trigger, the user is auto-confirmed. Let's automatically sign them in.
           console.log("[Auth] Auto-confirm trigger active, attempting immediate sign in...");
           const signInResponse = await supabase.auth.signInWithPassword({ email, password });
           console.log("[Auth] Auto Signin Response:", signInResponse);
@@ -97,7 +95,6 @@ function AuthPage() {
           }
         }
       } else {
-        // Sign In
         console.log("[Auth] Sending SignIn request for:", email);
         const signinResponse = await supabase.auth.signInWithPassword({ email, password });
         console.log("[Auth] Signin Response:", signinResponse);
@@ -122,7 +119,6 @@ function AuthPage() {
       } else if (message.includes("Email not confirmed") || message.includes("Email not verified")) {
         friendlyMessage = "Email not verified. Please check your inbox to confirm your account.";
       } else if (message === "Invalid login credentials" || status === 400) {
-        // Check if user exists
         try {
           const { data: exists } = await supabase.rpc('check_user_exists', { email_to_check: email });
           if (exists === false) {
@@ -174,23 +170,28 @@ function AuthPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-hero">
-      <div className="flex w-full items-center justify-center px-4 py-12">
-        <div className="glass w-full max-w-md rounded-2xl p-8 shadow-glow">
-          <div className="mb-6 flex justify-center">
+    <div className="flex min-h-screen bg-gradient-hero bg-grid-pattern items-center justify-center px-4 py-12">
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md"
+      >
+        <div className="glass-card relative rounded-3xl p-8 border border-border/60 bg-card/60 shadow-2xl backdrop-blur-xl">
+          <div className="mb-8 flex justify-center">
             <Logo />
           </div>
-          <h1 className="text-center text-2xl font-bold">
+
+          <h1 className="text-center text-2xl font-extrabold text-foreground">
             {mode === "signin" ? "Welcome back" : "Create your account"}
           </h1>
-          <p className="mt-1 text-center text-sm text-muted-foreground">
-            {mode === "signin" ? "Sign in to continue" : "Start with 5 free images per day"}
+          <p className="mt-1.5 text-center text-xs text-muted-foreground">
+            {mode === "signin" ? "Sign in to access your studio workspace" : "Get 5 free AI image removals every day"}
           </p>
 
           <Button
             type="button"
             variant="outline"
-            className="mt-6 w-full"
+            className="mt-6 w-full py-5 rounded-xl border-border/60 text-xs font-semibold hover:bg-accent/40"
             onClick={handleGoogle}
             disabled={loading}
           >
@@ -198,15 +199,15 @@ function AuthPage() {
             Continue with Google
           </Button>
 
-          <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
-            OR
-            <span className="h-px flex-1 bg-border" />
+          <div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <span className="h-px flex-1 bg-border/60" />
+            OR EMAIL
+            <span className="h-px flex-1 bg-border/60" />
           </div>
 
           <form onSubmit={handleEmail} className="space-y-4">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-xs font-semibold text-muted-foreground">Email Address</Label>
               <Input
                 id="email"
                 type="email"
@@ -214,10 +215,12 @@ function AuthPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
+                placeholder="name@company.com"
+                className="mt-1 w-full rounded-xl border-input bg-background/60 text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
             <div>
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-xs font-semibold text-muted-foreground">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -226,34 +229,41 @@ function AuthPage() {
                 required
                 minLength={6}
                 autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                placeholder="••••••••"
+                className="mt-1 w-full rounded-xl border-input bg-background/60 text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
             <Button
               type="submit"
-              className="w-full bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-90"
+              className="w-full bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-95 py-5 rounded-xl font-bold text-xs transition-all"
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
+              {mode === "signin" ? "Sign In to Studio" : "Create Account"}
             </Button>
           </form>
 
-          <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
-            <button onClick={() => setMode(mode === "signin" ? "signup" : "signin")} className="hover:text-foreground">
+          <div className="mt-6 flex items-center justify-between text-xs text-muted-foreground pt-4 border-t border-border/40">
+            <button
+              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+              className="hover:text-foreground font-semibold transition-colors"
+            >
               {mode === "signin" ? "Need an account? Sign up" : "Have an account? Sign in"}
             </button>
             {mode === "signin" && (
-              <button onClick={handleReset} className="hover:text-foreground">
+              <button onClick={handleReset} className="hover:text-foreground transition-colors">
                 Forgot password?
               </button>
             )}
           </div>
 
           <div className="mt-6 text-center text-xs text-muted-foreground">
-            <Link to="/" className="hover:text-foreground">← Back to home</Link>
+            <Link to="/" className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to home
+            </Link>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
