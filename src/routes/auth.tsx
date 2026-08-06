@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
 import { toast } from "sonner";
-import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 
 const searchSchema = z.object({
@@ -141,22 +141,6 @@ function AuthPage() {
     }
   }
 
-  async function handleGoogle() {
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin + "/app",
-        },
-      });
-      if (error) throw error;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
-      setLoading(false);
-    }
-  }
-
   async function handleReset() {
     if (!email) {
       toast.error("Enter your email above, then click reset.");
@@ -188,24 +172,7 @@ function AuthPage() {
             {mode === "signin" ? "Sign in to access your studio workspace" : "Get 5 free AI image removals every day"}
           </p>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-6 w-full py-5 rounded-xl border-border/60 text-xs font-semibold hover:bg-accent/40"
-            onClick={handleGoogle}
-            disabled={loading}
-          >
-            <GoogleIcon />
-            Continue with Google
-          </Button>
-
-          <div className="my-5 flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            <span className="h-px flex-1 bg-border/60" />
-            OR EMAIL
-            <span className="h-px flex-1 bg-border/60" />
-          </div>
-
-          <form onSubmit={handleEmail} className="space-y-4">
+          <form onSubmit={handleEmail} className="mt-6 space-y-4">
             <div>
               <Label htmlFor="email" className="text-xs font-semibold text-muted-foreground">Email Address</Label>
               <Input
@@ -265,13 +232,5 @@ function AuthPage() {
         </div>
       </motion.div>
     </div>
-  );
-}
-
-function GoogleIcon() {
-  return (
-    <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden>
-      <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.4-1.6 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.4 14.6 2.5 12 2.5 6.8 2.5 2.7 6.7 2.7 12s4.1 9.5 9.3 9.5c5.4 0 8.9-3.8 8.9-9.1 0-.6-.1-1.1-.2-1.6H12z" />
-    </svg>
   );
 }
