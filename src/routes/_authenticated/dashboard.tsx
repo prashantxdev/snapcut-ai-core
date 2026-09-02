@@ -37,8 +37,9 @@ function DashboardPage() {
   const { user } = useAuth();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["dashboard"],
+    queryKey: ["dashboard", user?.id],
     queryFn: () => getDashboard(),
+    enabled: !!user?.id,
   });
 
   const userInitial = user?.email ? user.email.charAt(0).toUpperCase() : "U";

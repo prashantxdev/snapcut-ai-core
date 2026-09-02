@@ -3,7 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { clearHistory, clearActiveState } from "@/lib/storage";
+import { clearUserHistory, clearActiveState } from "@/lib/storage";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -71,8 +71,10 @@ function SettingsPage() {
   const handleDeleteAccount = async () => {
     setDeleting(true);
     try {
-      await clearHistory();
-      await clearActiveState();
+      if (user?.id) {
+        await clearUserHistory(user.id);
+        await clearActiveState(user.id);
+      }
       toast.success("Account data cleared. Signing you out...");
       await signOut();
     } catch (err) {

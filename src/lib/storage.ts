@@ -1,16 +1,9 @@
-export interface HistoryItem {
-  id: string;
-  filename: string;
-  originalBase64: string;
-  resultBase64: string;
-  timestamp: number;
-}
-
-interface HistoryMetadata {
-  id: string;
-  filename: string;
-  timestamp: number;
-}
+export {
+  fetchUserHistory,
+  deleteUserHistoryItem,
+  clearUserHistory,
+} from "./history.functions";
+export type { HistoryItem } from "./history.functions";
 
 export interface ActiveState {
   filename: string | null;
@@ -148,105 +141,6 @@ export function dataURLtoFile(dataurl: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
-/**
- * Get the history metadata list from localStorage for a specific user
- */
-function getHistoryMetadata(userId?: string | null): HistoryMetadata[] {
-  if (typeof window === "undefined") return [];
-  const key = getStorageKey("snapcut_history", userId);
-  const stored = localStorage.getItem(key);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch (e) {
-    console.error("Failed to parse history from localStorage", e);
-    return [];
-  }
-}
-
-/**
- * Get all history items with their images loaded from IndexedDB for a specific user
- */
-export async function getHistory(userId?: string | null): Promise<HistoryItem[]> {
-  const metadataList = getHistoryMetadata(userId);
-  const items: HistoryItem[] = [];
-  for (const meta of metadataList) {
-    try {
-      const originalBase64 = await dbStore.get(getDbKey("original", meta.id, userId));
-      const resultBase64 = await dbStore.get(getDbKey("result", meta.id, userId));
-      if (originalBase64 && resultBase64) {
-        items.push({
-          id: meta.id,
-          filename: meta.filename,
-          timestamp: meta.timestamp,
-          originalBase64,
-          resultBase64,
-        });
-      }
-    } catch (e) {
-      console.error(`Failed to load images from IndexedDB for item ${meta.id}`, e);
-    }
-  }
-  return items;
-}
-
-/**
- * Save a new item to history for a specific user
- */
-export async function saveToHistory(
-  item: Omit<HistoryItem, "timestamp">,
-  userId?: string | null
-): Promise<HistoryItem[]> {
-  const { id, filename, originalBase64, resultBase64 } = item;
-
-  // 1. Save images to user-scoped IndexedDB keys
-  await dbStore.set(getDbKey("original", id, userId), originalBase64);
-  await dbStore.set(getDbKey("result", id, userId), resultBase64);
-
-  // 2. Save metadata to user-scoped localStorage
-  const timestamp = Date.now();
-  const newMeta: HistoryMetadata = { id, filename, timestamp };
-  let metadataList = getHistoryMetadata(userId);
-  metadataList = [newMeta, ...metadataList.filter((m) => m.id !== id)];
-
-  const key = getStorageKey("snapcut_history", userId);
-  localStorage.setItem(key, JSON.stringify(metadataList));
-
-  // 3. Return full history for this user
-  return getHistory(userId);
-}
-
-/**
- * Delete a specific item from history by ID for a specific user
- */
-export async function deleteFromHistory(id: string, userId?: string | null): Promise<HistoryItem[]> {
-  // 1. Delete from IndexedDB
-  await dbStore.delete(getDbKey("original", id, userId));
-  await dbStore.delete(getDbKey("result", id, userId));
-
-  // 2. Delete metadata
-  let metadataList = getHistoryMetadata(userId);
-  metadataList = metadataList.filter((m) => m.id !== id);
-  const key = getStorageKey("snapcut_history", userId);
-  localStorage.setItem(key, JSON.stringify(metadataList));
-
-  // 3. Return updated history
-  return getHistory(userId);
-}
-
-/**
- * Clear the entire history list for a specific user
- */
-export async function clearHistory(userId?: string | null): Promise<void> {
-  const metadataList = getHistoryMetadata(userId);
-  for (const meta of metadataList) {
-    await dbStore.delete(getDbKey("original", meta.id, userId));
-    await dbStore.delete(getDbKey("result", meta.id, userId));
-  }
-  const key = getStorageKey("snapcut_history", userId);
-  localStorage.removeItem(key);
-}
-
 export interface ActiveStateMetadata {
   filename: string | null;
   hasOriginal: boolean;
@@ -254,10 +148,10 @@ export interface ActiveStateMetadata {
 }
 
 /**
- * Save current active editor state for a specific user
+ * Save current active editor state strictly scoped to a specific user
  */
 export async function saveActiveState(state: ActiveState, userId?: string | null): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !userId) return;
   try {
     const metadata: ActiveStateMetadata = {
       filename: state.filename,
@@ -288,10 +182,10 @@ export async function saveActiveState(state: ActiveState, userId?: string | null
 }
 
 /**
- * Retrieve active editor state for a specific user
+ * Retrieve active editor state strictly scoped to a specific user
  */
 export async function getActiveState(userId?: string | null): Promise<ActiveState> {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || !userId) {
     return { filename: null, originalBase64: null, result: null };
   }
 
@@ -333,7 +227,7 @@ export async function getActiveState(userId?: string | null): Promise<ActiveStat
  * Clear active editor state for a specific user
  */
 export async function clearActiveState(userId?: string | null): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !userId) return;
   const metaKey = getStorageKey("snapcut_active_metadata", userId);
   localStorage.removeItem(metaKey);
   await dbStore.delete(getDbKey("active", "original", userId));

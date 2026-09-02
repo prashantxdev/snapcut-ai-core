@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { User, Session } from "@supabase/supabase-js";
+import type { User, Session, AuthChangeEvent } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface AuthContextType {
@@ -14,8 +14,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function cleanAuthHashAndHandleRedirect(currentSession: Session | null) {
   if (typeof window !== "undefined") {
-    const hasOAuthHash = window.location.hash && (window.location.hash.includes("access_token=") || window.location.hash.includes("error="));
-    const hasOAuthSearch = window.location.search && (window.location.search.includes("code=") || window.location.search.includes("error="));
+    const hasOAuthHash =
+      window.location.hash &&
+      (window.location.hash.includes("access_token=") || window.location.hash.includes("error="));
+    const hasOAuthSearch =
+      window.location.search &&
+      (window.location.search.includes("code=") || window.location.search.includes("error="));
     const isOAuthReturn = !!(hasOAuthHash || hasOAuthSearch);
 
     // 1. Clean hash parameters from URL
@@ -48,10 +52,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     // 1. Subscribe to auth state changes FIRST (handles OAuth redirects, token refreshes, sign in/out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      if (mounted) {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, currentSession: Session | null) => {
+      if (!mounted) return;
+
+      if (event === "SIGNED_OUT") {
+        try {
+          await queryClient.cancelQueries();
+          queryClient.clear();
+        } catch (err) {
+          console.error("[Auth] Error clearing cache on SIGNED_OUT event:", err);
+        }
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        const nextUser = currentSession?.user ?? null;
+        setUser((prevUser) => {
+          // If the user ID changed, clear query cache to prevent cross-account data leakage
+          if (prevUser && nextUser && prevUser.id !== nextUser.id) {
+            queryClient.cancelQueries();
+            queryClient.clear();
+          }
+          return nextUser;
+        });
         setSession(currentSession);
-        setUser(currentSession?.user ?? null);
         setLoading(false);
 
         if (currentSession) {
@@ -63,11 +92,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Fetch initial session
     async function getInitialSession() {
       try {
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        const {
+          data: { session: initialSession },
+          error,
+        } = await supabase.auth.getSession();
         if (error) {
           console.error("[Auth] Session retrieval notice:", error.message);
         }
-        
+
         if (mounted) {
           if (initialSession) {
             setSession(initialSession);
@@ -90,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   const signOut = useCallback(async () => {
     try {
@@ -99,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (queryErr) {
       console.error("[Auth] Error clearing cache on signout:", queryErr);
     }
-    
+
     try {
       await supabase.auth.signOut();
     } catch (err) {

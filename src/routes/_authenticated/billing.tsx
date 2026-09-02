@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useQuery } from "@tanstack/react-query";
 import { getDashboard } from "@/lib/dashboard.functions";
+import { useAuth } from "@/contexts/AuthContext";
 import { Check, Sparkles, Zap, Shield, HelpCircle, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -19,11 +20,13 @@ export const Route = createFileRoute("/_authenticated/billing")({
 });
 
 function BillingPage() {
+  const { user } = useAuth();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
 
   const { data } = useQuery({
-    queryKey: ["dashboard"],
+    queryKey: ["dashboard", user?.id],
     queryFn: () => getDashboard(),
+    enabled: !!user?.id,
   });
 
   const dailyUsed = data?.credits?.daily_used ?? 0;

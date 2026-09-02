@@ -88,6 +88,16 @@ export const processUpload = async (args: {
       .update({ status: "done", result_path: resultPath })
       .eq("id", upload.id);
 
+    // Save record to persistent user history table
+    await supabase.from("history").insert({
+      id: upload.id,
+      user_id: userId,
+      filename: originalFilename,
+      original_path: uploadPath,
+      result_path: resultPath,
+      original_size: originalSize,
+    });
+
     // Decrement credit
     if (canUseDaily) {
       await supabase

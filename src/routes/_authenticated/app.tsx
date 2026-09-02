@@ -1,6 +1,6 @@
 import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { v4 as uuidV4 } from "@/lib/uuid";
 import { supabase } from "@/integrations/supabase/client";
 import { processUpload } from "@/lib/processing.functions";
@@ -20,26 +20,27 @@ import {
   Search,
   ArrowUpDown,
   Wand2,
-  SlidersHorizontal,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   fileToBase64,
   urlToBase64,
   dataURLtoFile,
-  getHistory,
-  saveToHistory,
-  deleteFromHistory,
-  clearHistory,
   saveActiveState,
   getActiveState,
   clearActiveState,
-  HistoryItem,
 } from "@/lib/storage";
+import {
+  fetchUserHistory,
+  deleteUserHistoryItem,
+  clearUserHistory,
+  type HistoryItem,
+} from "@/lib/history.functions";
 
 export const Route = createFileRoute("/_authenticated/app")({
   head: () => ({
@@ -61,7 +62,6 @@ function WorkspacePage() {
   const { user } = useAuth();
   const userId = user?.id;
   const [activeTab, setActiveTab] = useState<string>("editor");
-  const [history, setHistory] = useState<HistoryItem[]>([]);
 
   // Search & Filter state for History tab
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,6 +78,18 @@ function WorkspacePage() {
 
   const queryClient = useQueryClient();
   const location = useLocation();
+
+  // Query authenticated user's history from Supabase (isolated per user.id)
+  const {
+    data: history = [],
+    isLoading: isHistoryLoading,
+    error: historyError,
+  } = useQuery({
+    queryKey: ["history", userId],
+    queryFn: () => fetchUserHistory(userId),
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
 
   const handleTabChange = (val: string) => {
     setActiveTab(val);
@@ -105,46 +117,44 @@ function WorkspacePage() {
     }
   }, [location.search]);
 
-  // Load state on mount / user change
+  // Load active editor state on mount / user change
   useEffect(() => {
+    let active = true;
     if (typeof window !== "undefined" && userId) {
-      const loadSavedData = async () => {
-        try {
-          const historyItems = await getHistory(userId);
-          setHistory(historyItems);
-
-          const active = await getActiveState(userId);
-          if (active.result) setResult(active.result);
-          else setResult(null);
-
-          if (active.originalBase64) {
-            setSelectedPreviewUrl(active.originalBase64);
-            if (active.filename) {
-              try {
-                const restoredFile = dataURLtoFile(active.originalBase64, active.filename);
-                setSelectedFile(restoredFile);
-              } catch (e) {
-                console.error("Failed to restore selected file from active state", e);
-              }
-            }
-          } else {
-            setSelectedPreviewUrl(null);
-            setSelectedFile(null);
-          }
-        } catch (e) {
-          console.error("Failed to load local storage state on mount:", e);
+      getActiveState(userId).then((activeState) => {
+        if (!active) return;
+        if (activeState.result) {
+          setResult(activeState.result);
+        } else {
+          setResult(null);
         }
-      };
-      loadSavedData();
+
+        if (activeState.originalBase64) {
+          setSelectedPreviewUrl(activeState.originalBase64);
+          if (activeState.filename) {
+            try {
+              const restoredFile = dataURLtoFile(activeState.originalBase64, activeState.filename);
+              setSelectedFile(restoredFile);
+            } catch (e) {
+              console.error("Failed to restore selected file from active state", e);
+            }
+          }
+        } else {
+          setSelectedPreviewUrl(null);
+          setSelectedFile(null);
+        }
+      });
     } else if (!userId) {
-      setHistory([]);
       setResult(null);
       setSelectedPreviewUrl(null);
       setSelectedFile(null);
     }
+    return () => {
+      active = false;
+    };
   }, [userId]);
 
-  // Sync active editor state to storage for current user
+  // Sync active editor state to storage strictly for current user
   useEffect(() => {
     if (userId) {
       saveActiveState(
@@ -158,15 +168,16 @@ function WorkspacePage() {
     }
   }, [selectedFile, selectedPreviewUrl, result, userId]);
 
+  // Background removal mutation
   const mutation = useMutation({
     mutationFn: async (file: File) => {
       const { data: userData } = await supabase.auth.getUser();
-      const userId = userData.user?.id;
-      if (!userId) throw new Error("Not signed in");
+      const currentUserId = userData.user?.id;
+      if (!currentUserId) throw new Error("Not signed in");
 
       const ext = file.name.split(".").pop() || "bin";
       const uploadId = uuidV4();
-      const path = `${userId}/${uploadId}.${ext}`;
+      const path = `${currentUserId}/${uploadId}.${ext}`;
 
       const { error: upErr } = await supabase.storage
         .from("uploads")
@@ -184,11 +195,7 @@ function WorkspacePage() {
       return { ...res, filename: file.name };
     },
     onSuccess: async (data, file) => {
-      console.log("API response:", data);
-      console.log("Result URL:", data.resultUrl);
-
       const rawUrl = data.resultUrl;
-
       if (!rawUrl) {
         toast.error("No image URL returned from backend");
         return;
@@ -197,10 +204,7 @@ function WorkspacePage() {
       let finalUrl = rawUrl;
       if (finalUrl.startsWith("/")) {
         finalUrl = window.location.origin + finalUrl;
-        console.log("Converted relative URL to absolute URL:", finalUrl);
       }
-
-      console.log("Final processed image URL to load:", finalUrl);
 
       try {
         const originalBase64 = selectedPreviewUrl || (await fileToBase64(file));
@@ -212,27 +216,52 @@ function WorkspacePage() {
           filename: file.name,
         };
 
-        const updatedHistory = await saveToHistory({
-          id: data.uploadId || uuidV4(),
-          filename: file.name,
-          originalBase64,
-          resultBase64,
-        }, userId);
-
-        setHistory(updatedHistory);
         setResult(newResult);
-        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success("Background removed successfully!");
       } catch (err) {
         console.error("Failed to convert result image to base64", err);
         const originalBase64 = selectedPreviewUrl || "";
         setResult({ originalUrl: originalBase64, resultUrl: finalUrl, filename: file.name });
-        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success("Background removed successfully!");
       }
+
+      // Invalidate history and dashboard queries for current user
+      queryClient.invalidateQueries({ queryKey: ["history", userId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", userId] });
+      toast.success("Background removed successfully!");
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Processing failed");
+    },
+  });
+
+  // Delete history item mutation
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => {
+      if (!userId) throw new Error("Not authenticated");
+      return deleteUserHistoryItem(id, userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["history", userId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", userId] });
+      toast.success("Item deleted from history");
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to delete item");
+    },
+  });
+
+  // Clear all history mutation
+  const clearMutation = useMutation({
+    mutationFn: () => {
+      if (!userId) throw new Error("Not authenticated");
+      return clearUserHistory(userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["history", userId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard", userId] });
+      toast.success("History cleared");
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to clear history");
     },
   });
 
@@ -345,29 +374,23 @@ function WorkspacePage() {
     await clearActiveState(userId);
   }
 
-  const handleDeleteHistoryItem = async (id: string, e: React.MouseEvent) => {
+  const handleDeleteHistoryItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = await deleteFromHistory(id, userId);
-    setHistory(updated);
-    toast.success("Item deleted from history");
+    deleteMutation.mutate(id);
   };
 
-  const handleClearHistory = async () => {
+  const handleClearHistory = () => {
     if (confirm("Are you sure you want to clear all history? This cannot be undone.")) {
-      await clearHistory(userId);
-      setHistory([]);
-      toast.success("History cleared");
+      clearMutation.mutate();
     }
   };
 
-  const handleOpenHistoryItem = (item: HistoryItem) => {
+  const handleOpenHistoryItem = async (item: HistoryItem) => {
     try {
-      const file = dataURLtoFile(item.originalBase64, item.filename);
-      setSelectedFile(file);
-      setSelectedPreviewUrl(item.originalBase64);
+      setSelectedPreviewUrl(item.originalUrl);
       setResult({
-        originalUrl: item.originalBase64,
-        resultUrl: item.resultBase64,
+        originalUrl: item.originalUrl,
+        resultUrl: item.resultUrl,
         filename: item.filename,
       });
       handleTabChange("editor");
@@ -378,15 +401,36 @@ function WorkspacePage() {
     }
   };
 
-  const handleDownloadHistoryItem = (filename: string, resultBase64: string, e?: React.MouseEvent) => {
+  const handleDownloadHistoryItem = async (filename: string, resultUrl: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const link = document.createElement("a");
-    link.href = resultBase64;
-    link.download = filename.replace(/\.[^.]+$/, "") + "-snapcut.png";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("Image downloaded!");
+    try {
+      if (resultUrl.startsWith("data:")) {
+        const link = document.createElement("a");
+        link.href = resultUrl;
+        link.download = filename.replace(/\.[^.]+$/, "") + "-snapcut.png";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Image downloaded!");
+        return;
+      }
+
+      const res = await fetch(resultUrl);
+      if (!res.ok) throw new Error(`Download failed with status ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename.replace(/\.[^.]+$/, "") + "-snapcut.png";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      toast.success("Image downloaded!");
+    } catch (err) {
+      console.error("Download failed:", err);
+      toast.error("Download failed. Please try again.");
+    }
   };
 
   // Filtered & Sorted History List
@@ -427,7 +471,7 @@ function WorkspacePage() {
 
           {/* TAB 1: EDITOR / UPLOAD */}
           <TabsContent value="editor" className="space-y-8 animate-in fade-in duration-300">
-            {!selectedFile ? (
+            {!selectedFile && !result ? (
               <UploadDropzone
                 onFile={handleFileSelect}
                 busy={mutation.isPending}
@@ -441,7 +485,7 @@ function WorkspacePage() {
                       Original Image Preview
                     </span>
                     <span className="text-[11px] font-mono text-muted-foreground truncate max-w-[200px]">
-                      {selectedFile.name}
+                      {selectedFile?.name || "image.png"}
                     </span>
                   </div>
 
@@ -476,8 +520,8 @@ function WorkspacePage() {
 
                 <div className="flex flex-wrap items-center justify-center gap-4">
                   <Button
-                    onClick={() => mutation.mutate(selectedFile)}
-                    disabled={mutation.isPending}
+                    onClick={() => selectedFile && mutation.mutate(selectedFile)}
+                    disabled={mutation.isPending || !selectedFile}
                     className="bg-gradient-brand text-primary-foreground shadow-glow hover:opacity-95 min-w-[200px] py-6 rounded-2xl font-bold text-sm transition-all"
                   >
                     {mutation.isPending ? (
@@ -594,21 +638,45 @@ function WorkspacePage() {
                   variant="outline"
                   size="sm"
                   onClick={handleClearHistory}
+                  disabled={clearMutation.isPending}
                   className="rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-semibold cursor-pointer shrink-0"
                 >
-                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Clear History
+                  {clearMutation.isPending ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Clear History
                 </Button>
               )}
             </div>
 
+            {/* Loading State */}
+            {isHistoryLoading && (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-xs font-medium">Loading your processed images from cloud…</p>
+              </div>
+            )}
+
+            {/* Error State */}
+            {historyError && (
+              <div className="glass-card rounded-3xl p-6 text-destructive border border-destructive/40 bg-destructive/10 flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <p className="text-xs font-semibold">
+                  {historyError instanceof Error ? historyError.message : "Failed to load history"}
+                </p>
+              </div>
+            )}
+
             {/* Empty State */}
-            {filteredHistory.length === 0 ? (
+            {!isHistoryLoading && !historyError && filteredHistory.length === 0 ? (
               <EmptyState
                 icon={Clock}
                 title={searchQuery ? "No matching history found" : "No Processed Images Yet"}
                 description={
                   searchQuery
-                    ? `No images in your local history match "${searchQuery}".`
+                    ? `No images in your account match "${searchQuery}".`
                     : "Upload an image in the studio workspace to start generating transparent HD PNGs."
                 }
                 actionLabel="Start Removing Backgrounds"
@@ -628,7 +696,7 @@ function WorkspacePage() {
                     {/* Image Preview Window */}
                     <div className="checker-bg relative aspect-square w-full flex items-center justify-center overflow-hidden rounded-t-3xl border-b border-border/40 p-4">
                       <img
-                        src={item.resultBase64}
+                        src={item.resultUrl}
                         alt={item.filename}
                         className="max-h-full max-w-full object-contain transition-transform duration-300 group-hover:scale-105"
                         loading="lazy"
@@ -653,7 +721,7 @@ function WorkspacePage() {
                         <Button
                           size="icon"
                           variant="secondary"
-                          onClick={(e) => handleDownloadHistoryItem(item.filename, item.resultBase64, e)}
+                          onClick={(e) => handleDownloadHistoryItem(item.filename, item.resultUrl, e)}
                           title="Download PNG"
                           className="h-10 w-10 rounded-full shadow-glow cursor-pointer hover:bg-primary hover:text-primary-foreground transition-all duration-200"
                         >
@@ -663,6 +731,7 @@ function WorkspacePage() {
                           size="icon"
                           variant="secondary"
                           onClick={(e) => handleDeleteHistoryItem(item.id, e)}
+                          disabled={deleteMutation.isPending}
                           title="Delete"
                           className="h-10 w-10 rounded-full shadow-glow cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-all duration-200"
                         >
