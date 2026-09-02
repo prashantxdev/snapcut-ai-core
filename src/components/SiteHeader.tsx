@@ -2,19 +2,12 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import { useAuth } from "@/contexts/AuthContext";
 import { LayoutDashboard, Wand2, Sparkles, User, ArrowRight } from "lucide-react";
 
 export function SiteHeader() {
-  const [session, setSession] = useState<Session | null>(null);
+  const { session } = useAuth();
   const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e: AuthChangeEvent, s: Session | null) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
