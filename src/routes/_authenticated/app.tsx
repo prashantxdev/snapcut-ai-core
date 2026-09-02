@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   fileToBase64,
   urlToBase64,
@@ -57,6 +58,8 @@ type ResultState = {
 };
 
 function WorkspacePage() {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [activeTab, setActiveTab] = useState<string>("editor");
   const [history, setHistory] = useState<HistoryItem[]>([]);
 
@@ -102,16 +105,18 @@ function WorkspacePage() {
     }
   }, [location.search]);
 
-  // Load state on mount
+  // Load state on mount / user change
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && userId) {
       const loadSavedData = async () => {
         try {
-          const historyItems = await getHistory();
+          const historyItems = await getHistory(userId);
           setHistory(historyItems);
 
-          const active = await getActiveState();
+          const active = await getActiveState(userId);
           if (active.result) setResult(active.result);
+          else setResult(null);
+
           if (active.originalBase64) {
             setSelectedPreviewUrl(active.originalBase64);
             if (active.filename) {
@@ -122,23 +127,36 @@ function WorkspacePage() {
                 console.error("Failed to restore selected file from active state", e);
               }
             }
+          } else {
+            setSelectedPreviewUrl(null);
+            setSelectedFile(null);
           }
         } catch (e) {
           console.error("Failed to load local storage state on mount:", e);
         }
       };
       loadSavedData();
+    } else if (!userId) {
+      setHistory([]);
+      setResult(null);
+      setSelectedPreviewUrl(null);
+      setSelectedFile(null);
     }
-  }, []);
+  }, [userId]);
 
-  // Sync active editor state to localStorage
+  // Sync active editor state to storage for current user
   useEffect(() => {
-    saveActiveState({
-      filename: selectedFile?.name || null,
-      originalBase64: selectedPreviewUrl,
-      result,
-    });
-  }, [selectedFile, selectedPreviewUrl, result]);
+    if (userId) {
+      saveActiveState(
+        {
+          filename: selectedFile?.name || null,
+          originalBase64: selectedPreviewUrl,
+          result,
+        },
+        userId
+      );
+    }
+  }, [selectedFile, selectedPreviewUrl, result, userId]);
 
   const mutation = useMutation({
     mutationFn: async (file: File) => {
@@ -199,7 +217,7 @@ function WorkspacePage() {
           filename: file.name,
           originalBase64,
           resultBase64,
-        });
+        }, userId);
 
         setHistory(updatedHistory);
         setResult(newResult);
@@ -239,21 +257,15 @@ function WorkspacePage() {
       setVerifyError(null);
       setImageLoaded(false);
 
-      console.log("Verifying image URL accessibility via fetch:", result.resultUrl);
       try {
         const response = await fetch(result.resultUrl);
         if (!active) return;
 
-        console.log("Image fetch response status:", response.status);
         if (!response.ok) {
-          if ([403, 404, 500].includes(response.status)) {
-            console.error(`Image request returned HTTP status code ${response.status}`);
-          }
           throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
         }
 
         const contentType = response.headers.get("content-type");
-        console.log("Fetched image Content-Type:", contentType);
         if (!contentType || !contentType.startsWith("image/")) {
           throw new Error(`Invalid content type: expected an image but received "${contentType}"`);
         }
@@ -267,7 +279,6 @@ function WorkspacePage() {
         setVerifying(false);
       } catch (err) {
         if (!active) return;
-        console.error("Verification failed for image URL:", result.resultUrl, err);
         setVerifyError(err instanceof Error ? err.message : "Failed to load image");
         setVerifying(false);
       }
@@ -300,7 +311,6 @@ function WorkspacePage() {
     }
 
     setDownloading(true);
-    console.log("Downloading image from URL:", result.resultUrl);
     try {
       const res = await fetch(result.resultUrl);
       if (!res.ok) throw new Error(`Download failed with status ${res.status}`);
@@ -332,19 +342,19 @@ function WorkspacePage() {
     setVerifyError(null);
     setVerifying(false);
     setImageLoaded(false);
-    await clearActiveState();
+    await clearActiveState(userId);
   }
 
   const handleDeleteHistoryItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = await deleteFromHistory(id);
+    const updated = await deleteFromHistory(id, userId);
     setHistory(updated);
     toast.success("Item deleted from history");
   };
 
   const handleClearHistory = async () => {
     if (confirm("Are you sure you want to clear all history? This cannot be undone.")) {
-      await clearHistory();
+      await clearHistory(userId);
       setHistory([]);
       toast.success("History cleared");
     }

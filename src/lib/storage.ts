@@ -93,6 +93,22 @@ class IndexedDBStore {
 export const dbStore = new IndexedDBStore();
 
 /**
+ * Helper to get a user-scoped storage key
+ */
+function getStorageKey(baseKey: string, userId?: string | null): string {
+  const safeId = userId || "guest";
+  return `${baseKey}_${safeId}`;
+}
+
+/**
+ * Helper to get a user-scoped IndexedDB key prefix
+ */
+function getDbKey(prefix: string, id: string, userId?: string | null): string {
+  const safeId = userId || "guest";
+  return `${prefix}_${safeId}_${id}`;
+}
+
+/**
  * Convert a File or Blob object to a Base64-encoded Data URL
  */
 export function fileToBase64(file: Blob | File): Promise<string> {
@@ -133,11 +149,12 @@ export function dataURLtoFile(dataurl: string, filename: string): File {
 }
 
 /**
- * Get the history metadata list from localStorage
+ * Get the history metadata list from localStorage for a specific user
  */
-function getHistoryMetadata(): HistoryMetadata[] {
+function getHistoryMetadata(userId?: string | null): HistoryMetadata[] {
   if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem("snapcut_history");
+  const key = getStorageKey("snapcut_history", userId);
+  const stored = localStorage.getItem(key);
   if (!stored) return [];
   try {
     return JSON.parse(stored);
@@ -148,15 +165,15 @@ function getHistoryMetadata(): HistoryMetadata[] {
 }
 
 /**
- * Get all history items with their images loaded from IndexedDB
+ * Get all history items with their images loaded from IndexedDB for a specific user
  */
-export async function getHistory(): Promise<HistoryItem[]> {
-  const metadataList = getHistoryMetadata();
+export async function getHistory(userId?: string | null): Promise<HistoryItem[]> {
+  const metadataList = getHistoryMetadata(userId);
   const items: HistoryItem[] = [];
   for (const meta of metadataList) {
     try {
-      const originalBase64 = await dbStore.get(`original_${meta.id}`);
-      const resultBase64 = await dbStore.get(`result_${meta.id}`);
+      const originalBase64 = await dbStore.get(getDbKey("original", meta.id, userId));
+      const resultBase64 = await dbStore.get(getDbKey("result", meta.id, userId));
       if (originalBase64 && resultBase64) {
         items.push({
           id: meta.id,
@@ -174,54 +191,60 @@ export async function getHistory(): Promise<HistoryItem[]> {
 }
 
 /**
- * Save a new item to history.
+ * Save a new item to history for a specific user
  */
-export async function saveToHistory(item: Omit<HistoryItem, "timestamp">): Promise<HistoryItem[]> {
+export async function saveToHistory(
+  item: Omit<HistoryItem, "timestamp">,
+  userId?: string | null
+): Promise<HistoryItem[]> {
   const { id, filename, originalBase64, resultBase64 } = item;
 
-  // 1. Save images to IndexedDB
-  await dbStore.set(`original_${id}`, originalBase64);
-  await dbStore.set(`result_${id}`, resultBase64);
+  // 1. Save images to user-scoped IndexedDB keys
+  await dbStore.set(getDbKey("original", id, userId), originalBase64);
+  await dbStore.set(getDbKey("result", id, userId), resultBase64);
 
-  // 2. Save metadata to localStorage
+  // 2. Save metadata to user-scoped localStorage
   const timestamp = Date.now();
   const newMeta: HistoryMetadata = { id, filename, timestamp };
-  let metadataList = getHistoryMetadata();
+  let metadataList = getHistoryMetadata(userId);
   metadataList = [newMeta, ...metadataList.filter((m) => m.id !== id)];
 
-  localStorage.setItem("snapcut_history", JSON.stringify(metadataList));
+  const key = getStorageKey("snapcut_history", userId);
+  localStorage.setItem(key, JSON.stringify(metadataList));
 
-  // 3. Return full history
-  return getHistory();
+  // 3. Return full history for this user
+  return getHistory(userId);
 }
 
 /**
- * Delete a specific item from history by ID
+ * Delete a specific item from history by ID for a specific user
  */
-export async function deleteFromHistory(id: string): Promise<HistoryItem[]> {
+export async function deleteFromHistory(id: string, userId?: string | null): Promise<HistoryItem[]> {
   // 1. Delete from IndexedDB
-  await dbStore.delete(`original_${id}`);
-  await dbStore.delete(`result_${id}`);
+  await dbStore.delete(getDbKey("original", id, userId));
+  await dbStore.delete(getDbKey("result", id, userId));
 
   // 2. Delete metadata
-  let metadataList = getHistoryMetadata();
+  let metadataList = getHistoryMetadata(userId);
   metadataList = metadataList.filter((m) => m.id !== id);
-  localStorage.setItem("snapcut_history", JSON.stringify(metadataList));
+  const key = getStorageKey("snapcut_history", userId);
+  localStorage.setItem(key, JSON.stringify(metadataList));
 
   // 3. Return updated history
-  return getHistory();
+  return getHistory(userId);
 }
 
 /**
- * Clear the entire history list
+ * Clear the entire history list for a specific user
  */
-export async function clearHistory(): Promise<void> {
-  const metadataList = getHistoryMetadata();
+export async function clearHistory(userId?: string | null): Promise<void> {
+  const metadataList = getHistoryMetadata(userId);
   for (const meta of metadataList) {
-    await dbStore.delete(`original_${meta.id}`);
-    await dbStore.delete(`result_${meta.id}`);
+    await dbStore.delete(getDbKey("original", meta.id, userId));
+    await dbStore.delete(getDbKey("result", meta.id, userId));
   }
-  localStorage.removeItem("snapcut_history");
+  const key = getStorageKey("snapcut_history", userId);
+  localStorage.removeItem(key);
 }
 
 export interface ActiveStateMetadata {
@@ -231,9 +254,9 @@ export interface ActiveStateMetadata {
 }
 
 /**
- * Save current active editor state
+ * Save current active editor state for a specific user
  */
-export async function saveActiveState(state: ActiveState): Promise<void> {
+export async function saveActiveState(state: ActiveState, userId?: string | null): Promise<void> {
   if (typeof window === "undefined") return;
   try {
     const metadata: ActiveStateMetadata = {
@@ -242,18 +265,22 @@ export async function saveActiveState(state: ActiveState): Promise<void> {
       hasResult: !!state.result,
     };
 
-    localStorage.setItem("snapcut_active_metadata", JSON.stringify(metadata));
+    const metaKey = getStorageKey("snapcut_active_metadata", userId);
+    localStorage.setItem(metaKey, JSON.stringify(metadata));
+
+    const origKey = getDbKey("active", "original", userId);
+    const resKey = getDbKey("active", "result_url", userId);
 
     if (state.originalBase64) {
-      await dbStore.set("active_original", state.originalBase64);
+      await dbStore.set(origKey, state.originalBase64);
     } else {
-      await dbStore.delete("active_original");
+      await dbStore.delete(origKey);
     }
 
     if (state.result?.resultUrl) {
-      await dbStore.set("active_result_url", state.result.resultUrl);
+      await dbStore.set(resKey, state.result.resultUrl);
     } else {
-      await dbStore.delete("active_result_url");
+      await dbStore.delete(resKey);
     }
   } catch (e) {
     console.error("Failed to save active state.", e);
@@ -261,22 +288,26 @@ export async function saveActiveState(state: ActiveState): Promise<void> {
 }
 
 /**
- * Retrieve active editor state
+ * Retrieve active editor state for a specific user
  */
-export async function getActiveState(): Promise<ActiveState> {
+export async function getActiveState(userId?: string | null): Promise<ActiveState> {
   if (typeof window === "undefined") {
     return { filename: null, originalBase64: null, result: null };
   }
 
-  const metaStr = localStorage.getItem("snapcut_active_metadata");
+  const metaKey = getStorageKey("snapcut_active_metadata", userId);
+  const metaStr = localStorage.getItem(metaKey);
   if (!metaStr) {
     return { filename: null, originalBase64: null, result: null };
   }
 
   try {
     const metadata = JSON.parse(metaStr) as ActiveStateMetadata;
-    const originalBase64 = metadata.hasOriginal ? await dbStore.get("active_original") : null;
-    const resultUrl = metadata.hasResult ? await dbStore.get("active_result_url") : null;
+    const origKey = getDbKey("active", "original", userId);
+    const resKey = getDbKey("active", "result_url", userId);
+
+    const originalBase64 = metadata.hasOriginal ? await dbStore.get(origKey) : null;
+    const resultUrl = metadata.hasResult ? await dbStore.get(resKey) : null;
 
     let result = null;
     if (resultUrl && metadata.filename && originalBase64) {
@@ -299,11 +330,12 @@ export async function getActiveState(): Promise<ActiveState> {
 }
 
 /**
- * Clear active editor state
+ * Clear active editor state for a specific user
  */
-export async function clearActiveState(): Promise<void> {
+export async function clearActiveState(userId?: string | null): Promise<void> {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("snapcut_active_metadata");
-  await dbStore.delete("active_original");
-  await dbStore.delete("active_result_url");
+  const metaKey = getStorageKey("snapcut_active_metadata", userId);
+  localStorage.removeItem(metaKey);
+  await dbStore.delete(getDbKey("active", "original", userId));
+  await dbStore.delete(getDbKey("active", "result_url", userId));
 }

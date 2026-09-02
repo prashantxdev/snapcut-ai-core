@@ -12,18 +12,28 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function cleanAuthHash() {
+function cleanAuthHashAndHandleRedirect(currentSession: Session | null) {
   if (typeof window !== "undefined") {
-    // If the hash contains OAuth parameters, strip it cleanly from the address bar
-    if (window.location.hash && (window.location.hash.includes("access_token=") || window.location.hash.includes("error="))) {
+    const hasOAuthHash = window.location.hash && (window.location.hash.includes("access_token=") || window.location.hash.includes("error="));
+    const hasOAuthSearch = window.location.search && (window.location.search.includes("code=") || window.location.search.includes("error="));
+    const isOAuthReturn = !!(hasOAuthHash || hasOAuthSearch);
+
+    // 1. Clean hash parameters from URL
+    if (hasOAuthHash) {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
     }
-    // If search parameters contain OAuth code (PKCE)
+
+    // 2. Clean query code parameters from URL (PKCE)
     if (window.location.search && window.location.search.includes("code=")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("code");
       const searchStr = url.searchParams.toString();
       window.history.replaceState(null, "", url.pathname + (searchStr ? "?" + searchStr : "") + url.hash);
+    }
+
+    // 3. If returning from OAuth onto root or /auth with an active session, navigate directly to /app
+    if (isOAuthReturn && currentSession && (window.location.pathname === "/" || window.location.pathname === "/auth")) {
+      window.location.assign("/app");
     }
   }
 }
@@ -45,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
 
         if (currentSession) {
-          cleanAuthHash();
+          cleanAuthHashAndHandleRedirect(currentSession);
         }
       }
     });
@@ -58,10 +68,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error("[Auth] Session retrieval notice:", error.message);
         }
         
-        if (mounted && initialSession) {
-          setSession(initialSession);
-          setUser(initialSession.user);
-          cleanAuthHash();
+        if (mounted) {
+          if (initialSession) {
+            setSession(initialSession);
+            setUser(initialSession.user);
+            cleanAuthHashAndHandleRedirect(initialSession);
+          }
         }
       } catch (err) {
         console.error("[Auth] Error fetching initial session:", err);
